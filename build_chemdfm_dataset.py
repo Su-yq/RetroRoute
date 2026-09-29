@@ -3,20 +3,6 @@
 """
 Build route-contextual ChemDFM reranking data from multi-step retrosynthesis routes.
 
-Designed for the current project layout where this script is placed under:
-    /home/kangchenglong/suyuqing/rl_retrosynthesis/datasets/
-
-V2 (implemented here):
-    reference multi-step route
-        -> teacher-forced search state (frontier + history)
-        -> frozen route-context MolT5 Top-K candidates
-        -> match one or more reference reactions
-        -> ChemDFM reranking JSONL
-
-V3 compatibility:
-    The prompt/input schema is intentionally frozen. Future rollout outcomes should be
-    written into `rollout_supervision` without changing `chemdfm_prompt`.
-
 Important properties:
   1. Standalone: does NOT import any project-local Python module.
   2. Supports preprocessed grouped JSON (recommended) and the original raw JSON format.
