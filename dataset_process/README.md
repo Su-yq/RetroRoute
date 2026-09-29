@@ -1,12 +1,8 @@
 # Dataset Processing
 
-This directory contains the data preparation scripts used by RetroRoute.
+This directory contains the preprocessing scripts used to convert RetroBench routes into the data formats required by RetroRoute.
 
-The preprocessing pipeline converts raw RetroBench synthesis routes into grouped multistep examples, extracts single step reactions, and removes overlap between the training, validation, and test reaction sets.
-
-All commands below should be executed from the repository root.
-
-## Execution Order
+## Pipeline
 
 ```text
 preprocess_multistep_retro.py
@@ -18,9 +14,11 @@ build_single_step_dataset.py
 filter_single_step_overlaps.py
 ```
 
-## 1. Multistep Route Preprocessing
+All commands below should be executed from the repository root.
 
-`preprocess_multistep_retro.py` converts the raw RetroBench route files into the grouped representation used by the multistep search code.
+## 1. Process Multistep Routes
+
+`preprocess_multistep_retro.py` converts the raw RetroBench route files into the grouped multistep representation used during search and ChemDFM dataset construction.
 
 ```bash
 mkdir -p ./dataset/processed
@@ -33,21 +31,22 @@ nohup python dataset_process/preprocess_multistep_retro.py \
   > preprocess_multistep.log 2>&1 &
 ```
 
-The primary outputs used later are:
+The primary grouped outputs are:
 
 ```text
-dataset/processed/train_dataset_grouped.json
-dataset/processed/valid_dataset_grouped.json
-dataset/processed/test_dataset_grouped.json
+dataset/processed/
+├── train_dataset_grouped.json
+├── valid_dataset_grouped.json
+└── test_dataset_grouped.json
 ```
 
-`--inner_path_as_route` interprets each inner synthesis path as an individual route.
+`--inner_path_as_route` treats each inner synthesis path as an individual route.
 
-`--save_flat_route_level` additionally stores route level representations when supported by the input data.
+`--save_flat_route_level` additionally saves route level records when available.
 
 ## 2. Build the Single Step Dataset
 
-`build_single_step_dataset.py` extracts individual retrosynthetic reaction examples from the processed multistep routes.
+Individual retrosynthetic reaction examples are extracted from the processed multistep routes.
 
 ```bash
 mkdir -p ./dataset/single_step
@@ -59,17 +58,15 @@ nohup python dataset_process/build_single_step_dataset.py \
   > build_single_step.log 2>&1 &
 ```
 
-Reaction level deduplication is enabled with:
+Reaction level deduplication is enabled using:
 
 ```text
 --dedup_mode reaction
 ```
 
-The resulting files are used to construct the proposal model training, validation, and test sets.
-
 ## 3. Remove Cross Split Overlap
 
-`filter_single_step_overlaps.py` removes overlapping reactions across the train, validation, and test splits.
+To avoid reaction overlap between training, validation, and test examples, run:
 
 ```bash
 mkdir -p ./dataset/single_step_no_overlap
@@ -78,10 +75,10 @@ nohup python dataset_process/filter_single_step_overlaps.py \
   --data_dir ./dataset/single_step \
   --output_dir ./dataset/single_step_no_overlap \
   --key_type reaction \
-  > filter_overlap.log 2>&1 &
+  > filter_single_step_overlap.log 2>&1 &
 ```
 
-The key files used by the proposal model experiments are:
+The files used by subsequent proposal model experiments are:
 
 ```text
 dataset/single_step_no_overlap/
@@ -92,8 +89,10 @@ dataset/single_step_no_overlap/
 
 ## Next Step
 
-After preprocessing, train the planning conditioned MolT5 proposal model following:
+Continue with:
 
 ```text
 single_step_model/README.md
 ```
+
+to train the Planning Scaffold MolT5 model and perform URPO refinement.
