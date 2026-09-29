@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 
 """
-Build DPO preference pairs from route-context SFT top-k candidates.
-
 This script:
 1. Reads generated top-20 candidates.
 2. Computes:
@@ -15,12 +13,7 @@ This script:
    - bb_ratio
    - bad_action_penalty
 3. Computes utility U.
-4. Builds DPO pairs:
-   - gold > low-quality candidate
-   - high-quality non-gold > low-quality non-gold, only when margin is large enough.
 
-Recommended run environment:
-  conda activate Retro_R1_forward
 """
 
 import argparse
