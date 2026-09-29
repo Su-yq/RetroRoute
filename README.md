@@ -2,7 +2,7 @@
 
 RetroRoute is a route level agentic framework for multistep retrosynthesis. It connects planning scaffolded reaction proposal, utility guided proposal refinement, and search state aware chemistry LLM decision making within an explicit multistep search procedure.
 
-The overall framework is illustrated in ![image](./Framework.pdf).
+The overall framework is illustrated in ![image](./Framework.png).
 
 ## Overview
 
