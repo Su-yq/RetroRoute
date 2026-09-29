@@ -1,66 +1,57 @@
-# 单步模型类 (Single-Step Model)
+# Single Step Proposal Model and URPO
 
-本目录包含所有**单步逆合成模型**相关的代码，包括模型定义、Prompt 构建、SFT/DPO 训练以及测试评估脚本。这些文件构成了从单步反应预测到多步搜索的核心模型系统。
+This directory contains the MolT5 based proposal model training and Utility Regularized Positive Optimization pipeline used by RetroRoute.
 
----
+The proposal pipeline contains four main stages:
 
-## 文件清单
-
-### 1. 单步生成模型（MolT5）
-
-| 文件 | 功能说明 |
-|------|---------|
-| `train_molt5_route_context_sft.py` | 使用路线上下文对 MolT5 进行 SFT 训练 |
-| `build_u_positive_sft_data.py` | 基于 U（效用）分数构建正向 SFT（监督微调）训练数据 |
-| `train_molt5_route_context_positive_sft.py` | 使用路线上下文 + U 引导正样本对 MolT5 进行 SFT 训练（正向-only 训练，不使用拒绝样本） |
-| `eval_molt5_topk.py` | 评估 MolT5 单步预测的 top-k 准确率，支持 Prompt 模板化输入 |
-
-
----
-
-## 模型训练流程概览
-
-```
-initial MolT5
-    │
-    ├── Prompt: Route context + "Please predict the reactant of the product:\n{SMILES}"
-    │
-    ▼
-route-context Molt5
-    │
-    ├── route context prompt
-    ├── U-positive data
-    │
-    ▼
-u-positive route-context Molt5
+```text
+Planning Scaffold SFT
+        |
+        v
+Top K evaluation
+        |
+        v
+Top 20 candidate generation
+        |
+        v
+Utility supported positive construction
+        |
+        v
+URPO continued SFT
 ```
 
----
+All commands below should be executed from the repository root.
 
-## Prompt 模板
+## Prerequisites
 
-单步模型使用统一的 Prompt 格式：
+Prepare the processed single step data:
 
+```text
+dataset/single_step_no_overlap/
+├── train_single_step_dedup.json
+├── valid_single_step_no_train_overlap.json
+└── test_single_step_no_train_valid_overlap.json
 ```
-Please predict the reactant of the product:\n{product_SMILES}
+
+Prepare the MolT5 model under:
+
+```text
+MolT5/model/
 ```
 
-- 对于路线上下文模型，会额外编码当前中间体和目标产物信息
+See `MolT5/README.md`.
 
----
+## 1. Train the Planning Scaffold Proposal Model
 
+`train_molt5_route_context_sft.py` fine tunes MolT5 using the planning scaffold containing the target molecule, current molecule, current depth, maximum depth, and route completion objective.
 
----
-
-## 运行指令
----
-
-训练新prompt（route context）
 ```bash
-nohup python train_molt5_route_context_sft.py \
-  --data_dir ../dataset/single_step_no_overlap \
-  --model_dir ../MolT5 \
-  --output_dir ../molt5_route_context_sft \
+mkdir -p ./outputs/molt5_route_context
+
+nohup python single_step_model/train_molt5_route_context_sft.py \
+  --data_dir ./dataset/single_step_no_overlap \
+  --model_dir ./MolT5/model \
+  --output_dir ./outputs/molt5_route_context \
   --train_file train_single_step_dedup.json \
   --valid_file valid_single_step_no_train_overlap.json \
   --max_depth 14 \
@@ -71,44 +62,92 @@ nohup python train_molt5_route_context_sft.py \
   --save_every_epochs 10 \
   --early_stop_patience 5 \
   --early_stop_min_delta 1e-4 \
-  --fp16 > train.log 2>&1 &
+  --fp16 \
+  > train_route_context.log 2>&1 &
 ```
 
-生成top20路径候选（为dpo偏好对构建做准备）
+The best checkpoint is expected at:
+
+```text
+outputs/molt5_route_context/checkpoint-best
+```
+
+## 2. Evaluate Single Step Top K Accuracy
+
+Use `eval_molt5_topk.py` to evaluate the planning scaffold model.
+
 ```bash
-nohup python generate_route_context_candidates.py \
-  --data_dir ../dataset/single_step_no_overlap \
-  --model_dir ../molt5_route_context_sft/checkpoint-best \
-  --output_dir ./dpo_candidates_route_context_sft_top20 \
+mkdir -p ./outputs/molt5_topk
+
+nohup python single_step_model/eval_molt5_topk.py \
+  --model_dir ./outputs/molt5_route_context/checkpoint-best \
+  --data_file ./dataset/single_step_no_overlap/test_single_step_no_train_valid_overlap.json \
+  --output_dir ./outputs/molt5_topk \
+  --prompt_mode route_context \
+  --max_depth 14 \
+  --topk 10 \
+  --batch_size 16 \
+  --fp16 \
+  > eval_molt5_topk.log 2>&1 &
+```
+
+## 3. Generate Top 20 Candidate Reactions
+
+Generate alternative reactions for the train and validation splits using the trained planning scaffold model.
+
+```bash
+mkdir -p ./outputs/route_candidates_top20
+
+nohup python single_step_model/generate_route_context_candidates.py \
+  --data_dir ./dataset/single_step_no_overlap \
+  --model_dir ./outputs/molt5_route_context/checkpoint-best \
+  --output_dir ./outputs/route_candidates_top20 \
   --splits train valid \
   --topk 20 \
   --batch_size 8 \
   --max_depth 14 \
-  --fp16 > process.log 2>&1 &
+  --fp16 \
+  > generate_candidates.log 2>&1 &
 ```
 
-构建偏好对
-```bash
-nohup python build_dpo_pairs_with_u.py \
-  --candidate_dir ./dpo_candidates_route_context_sft_top20 \
-  --single_step_dir ../dataset/single_step_no_overlap \
-  --output_dir ./dpo_pairs_u \
-  --project_root /root \
-  --forward_model_path ../ReactionT5/model \
-  --splits train valid \
-  --forward_topk 5 \
-  --forward_num_beams 5 \
-  --forward_batch_size 16 \
-  --forward_fp16 > build_dpo_pairs_u.log 2>&1 &
+These candidates form the action pool used for utility evaluation.
+
+## 4. Utility Scoring
+
+Generated nonreference reactions are evaluated using multiple signals including molecular validity, forward reaction plausibility, route compatibility, reference alignment, building block availability, and undesirable action penalties.
+
+The utility scoring stage used in the experiments produces scored files such as:
+
+```text
+outputs/utility_scores/train_scored_candidates.jsonl
 ```
 
-筛选构建u-positive:
+and optionally:
+
+```text
+outputs/utility_scores/valid_scored_candidates.jsonl
+```
+
+The public file tree must contain either these precomputed scored candidates or the corresponding utility scoring script before the next step can be reproduced from scratch.
+
+ReactionT5 is used as the forward reaction model during this stage. See:
+
+```text
+ReactionT5/README.md
+```
+
+## 5. Build Utility Supported Positive Data
+
+`build_u_positive_sft_data.py` filters generated candidates according to the utility and admissibility criteria used by URPO.
+
 ```bash
-python build_u_positive_sft_data.py \
-  --train_json ../dataset/single_step_no_overlap/train_single_step_dedup.json \
-  --valid_json ../dataset/single_step_no_overlap/valid_single_step_no_train_overlap.json \
-  --train_scored_candidates ./dpo_pairs_u/train_scored_candidates.jsonl \
-  --output_dir ./sft_u_positive \
+mkdir -p ./outputs/urpo_data
+
+python single_step_model/build_u_positive_sft_data.py \
+  --train_json ./dataset/single_step_no_overlap/train_single_step_dedup.json \
+  --valid_json ./dataset/single_step_no_overlap/valid_single_step_no_train_overlap.json \
+  --train_scored_candidates ./outputs/utility_scores/train_scored_candidates.jsonl \
+  --output_dir ./outputs/urpo_data \
   --max_pseudo_per_sample 1 \
   --max_pseudo_to_gold_ratio 0.5 \
   --min_valid_score 1.0 \
@@ -117,13 +156,28 @@ python build_u_positive_sft_data.py \
   --min_utility 1.5
 ```
 
-30轮dpo-sft:
+The main output files are:
+
+```text
+outputs/urpo_data/
+├── train_u_positive_sft.json
+└── valid_gold_sft.json
+```
+
+At most one supported alternative is added for each original training example, and generated positives are restricted to at most half the number of gold examples.
+
+## 6. Train the URPO Refined Proposal Model
+
+Continue training from the best Planning Scaffold checkpoint using the utility supported positive dataset.
+
 ```bash
-nohup env CUDA_VISIBLE_DEVICES=3 python train_molt5_route_context_positive_sft.py \
-  --init_model_dir ../molt5_route_context_sft/checkpoint-best \
-  --train_file ./sft_u_positive/train_u_positive_sft.json \
-  --valid_file ./sft_u_positive/valid_gold_sft.json \
-  --output_dir ../molt5_route_context_sft_u_positive_30epoch \
+mkdir -p ./outputs/molt5_urpo
+
+nohup env CUDA_VISIBLE_DEVICES=3 python single_step_model/train_molt5_route_context_positive_sft.py \
+  --init_model_dir ./outputs/molt5_route_context/checkpoint-best \
+  --train_file ./outputs/urpo_data/train_u_positive_sft.json \
+  --valid_file ./outputs/urpo_data/valid_gold_sft.json \
+  --output_dir ./outputs/molt5_urpo \
   --epochs 30 \
   --lr 3e-6 \
   --batch_size 16 \
@@ -137,27 +191,24 @@ nohup env CUDA_VISIBLE_DEVICES=3 python train_molt5_route_context_positive_sft.p
   --max_depth 14 \
   --max_grad_norm 1.0 \
   --fp16 \
-  --logging_steps 100 > train_u_positive_sft.log 2>&1 &
+  --logging_steps 100 \
+  > train_urpo.log 2>&1 &
 ```
 
-测试molt5
-```bash
-nohup python eval_molt5_topk.py \
-  --model_dir ../molt5_route_context_sft_u_positive_30epoch/checkpoint-best \
-  --data_file ../dataset/single_step_no_overlap/test_single_step_no_train_valid_overlap.json \
-  --output_dir ./molt5_topk \
-  --prompt_mode route_context \
-  --max_depth 14 \
-  --topk 10 \
-  --batch_size 16 \
-  --fp16 > test1.log 2>&1 &
+The reported multistep experiments use:
+
+```text
+outputs/molt5_urpo/checkpoint-epoch-6
 ```
 
-## 依赖库
+as the proposal checkpoint.
 
-- **PyTorch**: 深度学习框架
-- **transformers**: Hugging Face 预训练模型（T5 系列）
-- **RDKit**: 化学信息学工具包
-- **numpy**: 数值计算
-- **tqdm**: 进度条显示
-- **pickle**: 模型序列化
+## Next Step
+
+After proposal refinement, return to the repository root and construct the ChemDFM search state dataset:
+
+```text
+build_chemdfm_dataset.py
+```
+
+The corresponding commands are provided in the root `README.md`.
