@@ -1,12 +1,12 @@
 # RetroBench Dataset
 
-This directory stores the RetroBench data used to train and evaluate RetroRoute.
+This directory stores the RetroBench data used by RetroRoute.
 
-RetroBench is the multistep retrosynthesis benchmark introduced with FusionRetro and also used by RetroInText.
+RetroBench is a multistep retrosynthesis benchmark constructed from USPTO reaction pathways and used in FusionRetro and subsequent retrosynthetic planning studies.
 
 ## Files Included in This Repository
 
-The public repository contains:
+The GitHub repository contains:
 
 ```text
 dataset/
@@ -15,17 +15,17 @@ dataset/
 └── README.md
 ```
 
-The full training set is not uploaded because of its file size.
+The training split is not stored in this repository because of its file size.
 
-## Required Training Data
+## Training Set
 
-Download the RetroBench training split from the FusionRetro/RetroBench release used by RetroInText and place it in this directory as:
+Download the RetroBench training split from the FusionRetro or RetroInText data release and place it at:
 
 ```text
 dataset/train_dataset.json
 ```
 
-After downloading, the raw route files should be:
+After downloading the training set, the raw dataset directory should contain:
 
 ```text
 dataset/
@@ -34,25 +34,23 @@ dataset/
 └── test_dataset.json
 ```
 
-The RetroInText release provides the RetroBench dataset through its associated data release.
-
 ## Starting Material Stock
 
-Multistep search additionally requires the ZINC starting material stock used by RetroBench.
+Multistep route search additionally requires the ZINC starting material stock used by RetroBench.
 
-Download:
+Place:
 
 ```text
 zinc_stock_17_04_20.hdf5
 ```
 
-and place it at:
+at:
 
 ```text
 dataset/zinc_stock_17_04_20.hdf5
 ```
 
-The resulting directory should contain:
+The complete dataset directory should therefore be:
 
 ```text
 dataset/
@@ -65,21 +63,22 @@ dataset/
 
 ## Preprocessing
 
-Raw RetroBench routes must be converted into the grouped multistep format used by RetroRoute.
+Raw routes must be processed before training RetroRoute.
 
 From the repository root, run:
 
 ```bash
 mkdir -p ./dataset/processed
 
-python dataset_process/preprocess_multistep_retro.py \
+nohup python dataset_process/preprocess_multistep_retro.py \
   --input_dir ./dataset \
   --output_dir ./dataset/processed \
   --inner_path_as_route \
-  --save_flat_route_level
+  --save_flat_route_level \
+  > preprocess_multistep.log 2>&1 &
 ```
 
-The grouped files used in subsequent experiments are expected under:
+The grouped multistep datasets used in later stages are:
 
 ```text
 dataset/processed/
@@ -88,10 +87,10 @@ dataset/processed/
 └── test_dataset_grouped.json
 ```
 
-The preprocessing script may additionally create route level files when `--save_flat_route_level` is enabled.
-
-For the complete preprocessing pipeline, see:
+Continue with:
 
 ```text
 dataset_process/README.md
 ```
+
+for single step extraction and cross split overlap removal.
