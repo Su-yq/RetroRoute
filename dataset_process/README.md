@@ -1,69 +1,99 @@
-# Dataset Preprocess
+# Dataset Processing
 
-本目录包含多步数据集处理有关脚本文件。这些文件负责从原始多步逆合成数据出发，经过清洗、标准化等步骤，生成供模型训练和评估使用的数据集。
+This directory contains the data preparation scripts used by RetroRoute.
 
----
+The preprocessing pipeline converts raw RetroBench synthesis routes into grouped multistep examples, extracts single step reactions, and removes overlap between the training, validation, and test reaction sets.
 
-## 文件清单
+All commands below should be executed from the repository root.
 
-### 数据预处理与构建
+## Execution Order
 
-| 文件 | 功能说明 |
-|------|---------|
-| `preprocess_multistep_retro.py` | 预处理多步逆合成数据，进行 SMILES 标准化、原子映射去除、RDKit canonicalization |
-| `build_single_step_dataset.py` | 从多步路线数据中提取单步反应步骤，构建单步逆合成数据集 |
-| `filter_single_step_overlaps.py` | 过滤单步数据与多步数据之间的重叠样本，确保数据独立性 |
-
----
-
-## 数据处理流水线
-
-```
-原始多步路线数据
-       │
-       ▼
-  preprocess_multistep_retro.py  ──► SMILES 标准化
-       │
-       ▼
-  build_single_step_dataset.py   ──► 提取单步反应
-       │
-       ▼
-  filter_single_step_overlaps.py  ──► 过滤重叠样本，避免数据泄露
+```text
+preprocess_multistep_retro.py
+        |
+        v
+build_single_step_dataset.py
+        |
+        v
+filter_single_step_overlaps.py
 ```
 
----
+## 1. Multistep Route Preprocessing
 
-## 运行指令
+`preprocess_multistep_retro.py` converts the raw RetroBench route files into the grouped representation used by the multistep search code.
 
-raw数据处理为逐步多步逆合成
 ```bash
-nohup python preprocess_multistep_retro.py \
-  --input_dir ../dataset \
-  --output_dir ../dataset \
+mkdir -p ./dataset/processed
+
+nohup python dataset_process/preprocess_multistep_retro.py \
+  --input_dir ./dataset \
+  --output_dir ./dataset/processed \
   --inner_path_as_route \
-  --save_flat_route_level > preprocess.log 2>&1 &
+  --save_flat_route_level \
+  > preprocess_multistep.log 2>&1 &
 ```
 
-构建单步数据集
+The primary outputs used later are:
+
+```text
+dataset/processed/train_dataset_grouped.json
+dataset/processed/valid_dataset_grouped.json
+dataset/processed/test_dataset_grouped.json
+```
+
+`--inner_path_as_route` interprets each inner synthesis path as an individual route.
+
+`--save_flat_route_level` additionally stores route level representations when supported by the input data.
+
+## 2. Build the Single Step Dataset
+
+`build_single_step_dataset.py` extracts individual retrosynthetic reaction examples from the processed multistep routes.
+
 ```bash
-nohup python build_single_step_dataset.py \
-  --input_dir ../dataset \
-  --output_dir ../dataset/single_step \
-  --dedup_mode reaction > preprocess.log 2>&1 &
+mkdir -p ./dataset/single_step
+
+nohup python dataset_process/build_single_step_dataset.py \
+  --input_dir ./dataset/processed \
+  --output_dir ./dataset/single_step \
+  --dedup_mode reaction \
+  > build_single_step.log 2>&1 &
 ```
 
-数据集去重
+Reaction level deduplication is enabled with:
+
+```text
+--dedup_mode reaction
+```
+
+The resulting files are used to construct the proposal model training, validation, and test sets.
+
+## 3. Remove Cross Split Overlap
+
+`filter_single_step_overlaps.py` removes overlapping reactions across the train, validation, and test splits.
+
 ```bash
-nohup python filter_single_step_overlaps.py \
-  --data_dir ../dataset/single_step \
-  --output_dir ../dataset/single_step_no_overlap \
-  --key_type reaction > tmp.log 2>&1 &
+mkdir -p ./dataset/single_step_no_overlap
+
+nohup python dataset_process/filter_single_step_overlaps.py \
+  --data_dir ./dataset/single_step \
+  --output_dir ./dataset/single_step_no_overlap \
+  --key_type reaction \
+  > filter_overlap.log 2>&1 &
 ```
 
-## 依赖库
+The key files used by the proposal model experiments are:
 
-- **RDKit**: 化学信息学工具包，用于 SMILES 解析、分子描述符计算
-- **numpy**: 数值计算
-- **torch**: PyTorch 深度学习框架
-- **transformers**: Hugging Face 预训练模型库
-- **tqdm**: 进度条显示
+```text
+dataset/single_step_no_overlap/
+├── train_single_step_dedup.json
+├── valid_single_step_no_train_overlap.json
+└── test_single_step_no_train_valid_overlap.json
+```
+
+## Next Step
+
+After preprocessing, train the planning conditioned MolT5 proposal model following:
+
+```text
+single_step_model/README.md
+```
