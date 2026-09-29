@@ -96,8 +96,6 @@ def unique_sorted(smiles_list: List[str]) -> List[str]:
 def split_reaction_side(side: str) -> List[str]:
     """
     将反应一侧按 '.' 拆分成多个分子。
-    注意：如果你的数据中存在盐形式，如 [Na+].[Cl-]，这里也会被拆开。
-    对多数逆合成数据集来说，这是可以接受的。
     """
     if side is None:
         return []
