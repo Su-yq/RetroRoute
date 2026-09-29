@@ -75,7 +75,6 @@ def canonicalize_reactants(reactants: List[str]) -> Tuple[List[str], str]:
     clean = [canonicalize_smiles(x) for x in reactants if x and str(x).strip()]
     clean = [x for x in clean if x]
 
-    # 注意：这里不使用 set，避免极少数情况下两个相同反应物有计量意义。
     clean_sorted = sorted(clean)
     reactants_str = ".".join(clean_sorted)
 
@@ -88,10 +87,7 @@ def build_route_context_input(
     depth_remaining: int,
     goal: str = "building_blocks",
 ) -> str:
-    """
-    后续 route-contextualized SFT 可直接使用这个字段。
-    原始 MolT5 baseline 评估时不要用这个字段，要用 input_current。
-    """
+
     return (
         f"retrosynthesis: "
         f"<target> {target} "
@@ -130,7 +126,6 @@ def iter_route_level_objects(data: Any) -> Iterable[Dict[str, Any]]:
                 continue
 
     elif isinstance(data, dict):
-        # 兼容最早那种以 product SMILES 为 key 的原始格式，但这里主要不推荐直接用。
         for product, obj in data.items():
             if isinstance(obj, dict) and "routes" in obj:
                 for r in obj.get("routes", []):
