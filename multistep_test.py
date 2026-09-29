@@ -10,8 +10,8 @@ End-to-end multi-step retrosynthesis evaluation:
 
 This script is standalone with respect to project-local Python modules.
 
-Key differences from the old multistep_test.py:
-1. Replaces CrossSetRanker with a ChemDFM LoRA/QLoRA adapter.
+Keys of multistep_test.py:
+1. A ChemDFM LoRA/QLoRA adapter.
 2. ChemDFM sees the FULL current search context:
       final target + current molecule + frontier + route history + candidates.
 3. MolT5 raw proposals can be cached by (target, current, depth), but ChemDFM
@@ -24,41 +24,6 @@ Key differences from the old multistep_test.py:
    Figure-2-style accuracy-vs-ground-truth-depth analysis.
 8. Supports a GT-depth search cap (paper-compatible) or the original global
    max-depth cap.
-
-Expected paths when this file is placed under:
-    /home/kangchenglong/suyuqing/rl_retrosynthesis/datasets/
-
-Example:
-nohup env CUDA_VISIBLE_DEVICES=0 python multistep_test_chemdfm.py \
-  --test_multistep_json ./test_dataset_grouped.json \
-  --generator_model_dir ./molt5_route_context_sft_u_positive_30epoch/checkpoint-epoch-6 \
-  --chemdfm_base_model ../ChemDFM-local-model \
-  --chemdfm_adapter ./chemdfm_reranker_v2/checkpoint-epoch-2 \
-  --stock_path /workspace/kangchenglong/Multi-step/fusion/zinc_stock_17_04_20.hdf5 \
-  --output_dir ./multistep_eval_chemdfm_v2_epoch2_580 \
-  --single_step_topk 10 \
-  --single_step_num_beams 10 \
-  --ranker_num_candidates 10 \
-  --ranker_keep_topm 5 \
-  --route_beam_size 5 \
-  --eval_topk 5 \
-  --ranker_score_weight 1.0 \
-  --molt5_score_weight 0.0 \
-  --length_norm_gamma 0.0 \
-  --depth_penalty 0.0 \
-  --max_depth 14 \
-  --max_search_steps 14 \
-  --max_reactants 5 \
-  --max_history_steps 6 \
-  --expand_all_unsolved \
-  --stop_when_enough_complete \
-  --skip_bad_actions \
-  --sample_size 580 \
-  --sample_seed 42 \
-  --load_chemdfm_in_4bit \
-  --chemdfm_bf16 \
-  --fp16 \
-  > multistep_chemdfm_epoch2_580.log 2>&1 &
 """
 
 import argparse
